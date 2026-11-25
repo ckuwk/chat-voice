@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -39,6 +39,7 @@
       font-size: 15px;
       color: #202124;
       margin-bottom: 24px;
+      white-space: pre-wrap;
     }
     .fallback {
       display: flex;
@@ -58,6 +59,7 @@
       background: #34a853;
       color: white;
       font-weight: 600;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -66,14 +68,13 @@
   <button id="micBtn" class="mic-btn">🎤 Tap & Speak</button>
   <div id="status">Tap the mic and say:<br>"Tell Alex I will be 10 minutes late"</div>
 
-  <!-- Backup input: tap here and use your Android keyboard mic if needed -->
   <div class="fallback">
     <input id="manualInput" type="text" placeholder="Or use keyboard mic here...">
     <button id="sendBtn" class="send-btn">Send</button>
   </div>
 
   <script>
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz-16KF-wsao2a8lw_rzReuOu-PcSxQK62lstP00L9reju19TMOrhUx6HBYHioQ0tZWkA/exec;"
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz-16KF-wsao2a8lw_rzReuOu-PcSxQK62lstP00L9reju19TMOrhUx6HBYHioQ0tZWkA/exec";
     const SECRET_PIN = "1234";
 
     const micBtn = document.getElementById("micBtn");
@@ -81,27 +82,52 @@
     const manualInput = document.getElementById("manualInput");
     const sendBtn = document.getElementById("sendBtn");
 
+    function callAppsScript(params) {
+      return new Promise((resolve, reject) => {
+        const callbackName = "cb_" + Date.now() + "_" + Math.floor(Math.random() * 10000);
+        const script = document.createElement("script");
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error("連線逾時（15秒），請檢查網路或部署權限。"));
+        }, 15000);
+
+        function cleanup() {
+          clearTimeout(timer);
+          delete window[callbackName];
+          if (script.parentNode) script.parentNode.removeChild(script);
+        }
+
+        window[callbackName] = (data) => {
+          cleanup();
+          resolve(data);
+        };
+
+        script.onerror = () => {
+          cleanup();
+          reject(new Error("無法載入 Apps Script，請確認 WEB_APP_URL 與 Anyone 權限。"));
+        };
+
+        const url = new URL(WEB_APP_URL.trim());
+        url.searchParams.set("callback", callbackName);
+        for (const [k, v] of Object.entries(params)) {
+          url.searchParams.set(k, v);
+        }
+        script.src = url.toString();
+        document.body.appendChild(script);
+      });
+    }
+
     async function sendCommand(commandText) {
       if (!commandText.trim()) return;
       status.textContent = `Heard: "${commandText}"\nSending to Gemini...`;
 
       try {
-        const res = await fetch(WEB_APP_URL, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain" },
-          body: JSON.stringify({ pin: SECRET_PIN, command: commandText })
-        });
-        const rawText = await res.text();
-        if (rawText === "Unauthorized") {
-          status.textContent = "Error: Wrong SECRET_PIN.";
-          return;
-        }
-        const data = JSON.parse(rawText);
+        const data = await callAppsScript({ pin: SECRET_PIN, command: commandText });
         status.textContent = data.error
           ? "Error: " + data.error
           : `Sent to [${data.target}]: "${data.message}"`;
       } catch (err) {
-        status.textContent = "Connection error: " + err.message;
+        status.textContent = "Error: " + err.message;
       }
     }
 
@@ -109,7 +135,7 @@
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.lang = "en-US"; // Change language code if needed (e.g., "de-DE")
+      recognition.lang = "en-US"; // 若要改中文語音辨識可改為 "zh-TW" 或 "zh-CN"
       recognition.interimResults = false;
 
       micBtn.onclick = () => {
